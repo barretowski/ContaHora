@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contahora
+      POSTGRES_PASSWORD: contahora
+      POSTGRES_DB: contahora
+    ports:
+      - "5432:5432"
+    volumes:
+      - contahora_pgdata:/var/lib/postgresql/data
+
+volumes:
+  contahora_pgdata:

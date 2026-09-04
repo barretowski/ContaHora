@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "API do ContaHora - controle de horas extras",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "build": "nest build",
     "start": "nest start",

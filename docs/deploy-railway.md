@@ -102,6 +102,9 @@ Detalhes em [`login-google.md`](login-google.md).
 
 ## Observações
 
+- **Node 20**: fixado em `engines.node` (package.json) e `.nvmrc` nos dois
+  serviços. O `vite-plugin-pwa@0.20` quebra o build no Node 22 do Railway
+  (`Dynamic require of "workbox-build" is not supported`).
 - Migrations novas: basta commitar em `api/prisma/migrations`; o próximo deploy
   roda `prisma migrate deploy`.
 - Trocar `VITE_API_URL` ou `VITE_GOOGLE_CLIENT_ID` exige **redeploy do web**.

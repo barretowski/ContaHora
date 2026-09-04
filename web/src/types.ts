@@ -6,8 +6,28 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  avatarUrl?: string | null;
+  hasPassword?: boolean;
+  googleLinked?: boolean;
   active?: boolean;
   createdAt?: string;
+}
+
+export interface OverviewUserRow {
+  userId: string;
+  name: string;
+  email: string;
+  totalMinutes: number;
+  count: number;
+  minutesPendente: number;
+  minutesPaga: number;
+  minutesCompensada: number;
+}
+
+export interface OverviewResponse {
+  month: string;
+  users: OverviewUserRow[];
+  totals: Omit<OverviewUserRow, 'userId' | 'name' | 'email'>;
 }
 
 export interface OvertimeEntry {

@@ -8,6 +8,24 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () => import('../pages/LoginPage.vue'),
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/registrar',
+      name: 'register',
+      component: () => import('../pages/RegisterPage.vue'),
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/recuperar-senha',
+      name: 'forgot-password',
+      component: () => import('../pages/ForgotPasswordPage.vue'),
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/redefinir-senha',
+      name: 'reset-password',
+      component: () => import('../pages/ResetPasswordPage.vue'),
       meta: { public: true },
     },
     {
@@ -25,6 +43,22 @@ const router = createRouter({
           component: () => import('../pages/EntriesPage.vue'),
         },
         {
+          path: 'relatorio',
+          name: 'report',
+          component: () => import('../pages/ReportPage.vue'),
+        },
+        {
+          path: 'perfil',
+          name: 'profile',
+          component: () => import('../pages/ProfilePage.vue'),
+        },
+        {
+          path: 'admin',
+          name: 'admin',
+          component: () => import('../pages/AdminPage.vue'),
+          meta: { adminOnly: true },
+        },
+        {
           path: 'usuarios',
           name: 'users',
           component: () => import('../pages/UsersPage.vue'),
@@ -40,7 +74,9 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore();
   if (!auth.ready) await auth.fetchMe();
 
-  if (to.meta.public) {
+  if (to.meta.public) return true;
+
+  if (to.meta.guestOnly) {
     return auth.isAuthenticated ? { name: 'dashboard' } : true;
   }
   if (!auth.isAuthenticated) {

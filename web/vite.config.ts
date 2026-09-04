@@ -32,7 +32,23 @@ export default defineConfig({
       },
       workbox: {
         navigateFallbackDenylist: [/^\/api/],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        // libs de PDF são grandes e usadas só sob demanda — não entram no precache
+        globIgnores: [
+          '**/jspdf*.js',
+          '**/html2canvas*.js',
+          '**/purify.es*.js',
+          '**/index.es-*.js',
+        ],
         runtimeCaching: [
+          {
+            urlPattern: /\/assets\/(jspdf|html2canvas|purify|index\.es)-.*\.js$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pdf-libs',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api'),
             handler: 'NetworkFirst',

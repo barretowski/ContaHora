@@ -7,7 +7,8 @@ services:
       POSTGRES_PASSWORD: contahora
       POSTGRES_DB: contahora
     ports:
-      - "5432:5432"
+      # 5433 no host para não conflitar com um Postgres nativo em 5432
+      - "5433:5432"
     volumes:
       - contahora_pgdata:/var/lib/postgresql/data
 

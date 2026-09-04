@@ -32,6 +32,11 @@ export class EntriesController {
     return this.entries.summary(user, q.year, q.userId);
   }
 
+  @Get('overview')
+  overview(@CurrentUser() user: AuthUser, @Query() q: QueryEntriesDto) {
+    return this.entries.overview(user, q.month);
+  }
+
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateEntryDto) {
     return this.entries.create(user, dto);

@@ -8,7 +8,7 @@ import {
   monthLabel,
   isoToBr,
 } from '../lib/month';
-import { minutesToLabel, parseDuration } from '../lib/time';
+import { minutesToLabel } from '../lib/time';
 import {
   STATUS_LABEL,
   STATUS_COLOR,
@@ -32,6 +32,9 @@ const statusOptions = (Object.keys(STATUS_LABEL) as EntryStatus[]).map((v) => ({
   title: STATUS_LABEL[v],
   value: v,
 }));
+
+const DAY_MINUTES = 24 * 60;
+const presets = [15, 30, 45, 60, 90, 120, 180, 240];
 
 const headers = [
   { title: 'Data', key: 'date', width: 120 },
@@ -78,16 +81,44 @@ const saving = ref(false);
 const editingId = ref<string | null>(null);
 const form = reactive({
   date: new Date().toISOString().slice(0, 10),
-  duration: '',
+  hours: 0,
+  mins: 0,
   description: '',
   status: 'PENDENTE' as EntryStatus,
 });
 const formError = ref('');
 
+const durationMinutes = computed(() => {
+  const h = Number.isFinite(+form.hours) ? Math.max(0, Math.floor(+form.hours)) : 0;
+  const m = Number.isFinite(+form.mins) ? Math.max(0, Math.floor(+form.mins)) : 0;
+  return Math.min(h * 60 + m, DAY_MINUTES);
+});
+const durationLabel = computed(() =>
+  durationMinutes.value > 0 ? minutesToLabel(durationMinutes.value) : '0min',
+);
+
+/** normaliza: carrega minutos >= 60 para horas e mantém tudo formatado */
+function normalizeDuration() {
+  const total = durationMinutes.value;
+  form.hours = Math.floor(total / 60);
+  form.mins = total % 60;
+}
+
+function setPreset(min: number) {
+  form.hours = Math.floor(min / 60);
+  form.mins = min % 60;
+}
+
+function setDuration(totalMin: number) {
+  const clamped = Math.max(0, Math.min(totalMin, DAY_MINUTES));
+  form.hours = Math.floor(clamped / 60);
+  form.mins = clamped % 60;
+}
+
 function openCreate() {
   editingId.value = null;
   form.date = new Date().toISOString().slice(0, 10);
-  form.duration = '';
+  setDuration(0);
   form.description = '';
   form.status = 'PENDENTE';
   formError.value = '';
@@ -97,7 +128,7 @@ function openCreate() {
 function openEdit(e: OvertimeEntry) {
   editingId.value = e.id;
   form.date = e.date.slice(0, 10);
-  form.duration = minutesToLabel(e.minutes);
+  setDuration(e.minutes);
   form.description = e.description ?? '';
   form.status = e.status;
   formError.value = '';
@@ -105,9 +136,9 @@ function openEdit(e: OvertimeEntry) {
 }
 
 async function save() {
-  const minutes = parseDuration(form.duration);
-  if (!minutes) {
-    formError.value = 'Duração inválida. Use 2:30, 2h30 ou 2,5.';
+  normalizeDuration();
+  if (durationMinutes.value < 1) {
+    formError.value = 'Informe a duração (horas e/ou minutos).';
     return;
   }
   saving.value = true;
@@ -115,7 +146,7 @@ async function save() {
   try {
     const payload = {
       date: form.date,
-      minutes,
+      minutes: durationMinutes.value,
       description: form.description || undefined,
       status: form.status,
     };
@@ -203,7 +234,9 @@ async function quickStatus(e: OvertimeEntry, status: EntryStatus) {
       :items-per-page="-1"
     >
       <template #[`item.date`]="{ item }">{{ isoToBr(item.date) }}</template>
-      <template #[`item.minutes`]="{ item }">{{ minutesToLabel(item.minutes) }}</template>
+      <template #[`item.minutes`]="{ item }">
+        <span class="font-weight-medium">{{ minutesToLabel(item.minutes) }}</span>
+      </template>
       <template #[`item.description`]="{ item }">
         <span class="text-medium-emphasis">{{ item.description || '—' }}</span>
       </template>
@@ -244,35 +277,110 @@ async function quickStatus(e: OvertimeEntry, status: EntryStatus) {
   </v-card>
 
   <!-- dialog criar/editar -->
-  <v-dialog v-model="dialog" max-width="460">
+  <v-dialog v-model="dialog" max-width="520" scrollable>
     <v-card>
-      <v-card-title>
+      <v-card-title class="d-flex align-center ga-2 py-4">
+        <v-icon :icon="editingId ? 'mdi-pencil' : 'mdi-plus-circle'" color="primary" />
         {{ editingId ? 'Editar lançamento' : 'Novo lançamento' }}
       </v-card-title>
+      <v-divider />
+
       <v-card-text>
-        <v-text-field v-model="form.date" label="Data" type="date" />
-        <v-text-field
-          v-model="form.duration"
-          label="Duração"
-          placeholder="2:30, 2h30 ou 2,5"
-          hint="horas:minutos, 2h30 ou horas decimais"
-        />
-        <v-textarea
-          v-model="form.description"
-          label="Descrição (opcional)"
-          rows="2"
-          auto-grow
-          variant="outlined"
-        />
-        <v-select v-model="form.status" :items="statusOptions" label="Status" />
-        <v-alert v-if="formError" type="error" density="compact">
-          {{ formError }}
-        </v-alert>
+        <v-form @submit.prevent="save">
+          <v-text-field
+            v-model="form.date"
+            label="Data"
+            type="date"
+            prepend-inner-icon="mdi-calendar"
+          />
+
+          <div class="text-body-2 font-weight-medium mb-2">Duração</div>
+          <div class="d-flex ga-3">
+            <v-text-field
+              v-model.number="form.hours"
+              type="number"
+              min="0"
+              max="24"
+              inputmode="numeric"
+              label="Horas"
+              suffix="h"
+              @blur="normalizeDuration"
+            />
+            <v-text-field
+              v-model.number="form.mins"
+              type="number"
+              min="0"
+              max="59"
+              step="5"
+              inputmode="numeric"
+              label="Minutos"
+              suffix="min"
+              @blur="normalizeDuration"
+            />
+          </div>
+
+          <div class="d-flex flex-wrap ga-2 mb-3">
+            <v-chip
+              v-for="p in presets"
+              :key="p"
+              size="small"
+              variant="outlined"
+              :color="durationMinutes === p ? 'primary' : undefined"
+              @click="setPreset(p)"
+            >
+              {{ minutesToLabel(p) }}
+            </v-chip>
+          </div>
+
+          <div class="duration-preview mb-4">
+            <v-icon color="primary" size="small">mdi-timer-outline</v-icon>
+            <span class="text-h6">{{ durationLabel }}</span>
+            <span class="text-body-2 text-medium-emphasis">
+              {{ durationMinutes }} minuto{{ durationMinutes === 1 ? '' : 's' }}
+            </span>
+          </div>
+
+          <v-textarea
+            v-model="form.description"
+            label="Descrição (opcional)"
+            rows="2"
+            auto-grow
+            variant="outlined"
+            prepend-inner-icon="mdi-text"
+          />
+
+          <div class="text-body-2 font-weight-medium mb-2">Status</div>
+          <v-btn-toggle
+            v-model="form.status"
+            mandatory
+            divided
+            variant="outlined"
+            class="d-flex mb-2"
+          >
+            <v-btn
+              v-for="opt in statusOptions"
+              :key="opt.value"
+              :value="opt.value"
+              size="small"
+              class="flex-grow-1 text-caption"
+            >
+              {{ opt.title }}
+            </v-btn>
+          </v-btn-toggle>
+
+          <v-alert v-if="formError" type="error" density="compact" class="mt-2">
+            {{ formError }}
+          </v-alert>
+        </v-form>
       </v-card-text>
-      <v-card-actions>
+
+      <v-divider />
+      <v-card-actions class="py-3">
         <v-spacer />
         <v-btn variant="text" @click="dialog = false">Cancelar</v-btn>
-        <v-btn color="primary" :loading="saving" @click="save">Salvar</v-btn>
+        <v-btn color="primary" variant="flat" :loading="saving" @click="save">
+          Salvar
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -293,3 +401,17 @@ async function quickStatus(e: OvertimeEntry, status: EntryStatus) {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.duration-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+.duration-preview .v-icon {
+  align-self: center;
+}
+</style>

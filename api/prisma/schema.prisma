@@ -22,11 +22,20 @@ model User {
   id           String   @id @default(cuid())
   name         String
   email        String   @unique
-  passwordHash String
+  /// nulo quando a conta usa apenas login social (Google)
+  passwordHash String?
   role         Role     @default(USER)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // login com Google
+  googleId  String? @unique
+  avatarUrl String?
+
+  // reset de senha
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
 
   entries OvertimeEntry[]
 }

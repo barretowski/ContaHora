@@ -18,6 +18,17 @@ interface SummaryRow {
   minutesCompensada: number;
 }
 
+interface OverviewRow {
+  userId: string;
+  name: string;
+  email: string;
+  totalMinutes: number;
+  count: number;
+  minutesPendente: number;
+  minutesPaga: number;
+  minutesCompensada: number;
+}
+
 @Injectable()
 export class EntriesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -135,6 +146,56 @@ export class EntriesService {
     );
 
     return { year: y, userId: targetUserId, months, totals };
+  }
+
+  /** Consolidado da equipe no mês (só ADMIN). */
+  async overview(actor: AuthUser, month?: string) {
+    if (actor.role !== 'ADMIN') {
+      throw new ForbiddenException('Acesso restrito');
+    }
+    const now = new Date();
+    const key =
+      month ??
+      `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const range = this.monthRange(key)!;
+
+    const rows = await this.prisma.$queryRaw<OverviewRow[]>`
+      SELECT u.id                                                              AS "userId",
+             u.name                                                           AS "name",
+             u.email                                                          AS "email",
+             COALESCE(SUM(e.minutes), 0)::int                                 AS "totalMinutes",
+             COUNT(e.id)::int                                                 AS "count",
+             COALESCE(SUM(CASE WHEN e.status = 'PENDENTE'   THEN e.minutes END), 0)::int AS "minutesPendente",
+             COALESCE(SUM(CASE WHEN e.status = 'PAGA'       THEN e.minutes END), 0)::int AS "minutesPaga",
+             COALESCE(SUM(CASE WHEN e.status = 'COMPENSADA' THEN e.minutes END), 0)::int AS "minutesCompensada"
+      FROM "User" u
+      LEFT JOIN "OvertimeEntry" e
+        ON e."userId" = u.id
+       AND e.date >= ${range.gte}
+       AND e.date <  ${range.lt}
+      WHERE u.active = true
+      GROUP BY u.id, u.name, u.email
+      ORDER BY u.name ASC
+    `;
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        totalMinutes: acc.totalMinutes + r.totalMinutes,
+        count: acc.count + r.count,
+        minutesPendente: acc.minutesPendente + r.minutesPendente,
+        minutesPaga: acc.minutesPaga + r.minutesPaga,
+        minutesCompensada: acc.minutesCompensada + r.minutesCompensada,
+      }),
+      {
+        totalMinutes: 0,
+        count: 0,
+        minutesPendente: 0,
+        minutesPaga: 0,
+        minutesCompensada: 0,
+      },
+    );
+
+    return { month: key, users: rows, totals };
   }
 
   private async ensureOwnership(actor: AuthUser, id: string) {

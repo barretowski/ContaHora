@@ -1,31 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { apiErrorMessage } from '../lib/api';
 import AuthShell from '../components/AuthShell.vue';
 import GoogleSignInButton from '../components/GoogleSignInButton.vue';
 
 const auth = useAuthStore();
-const route = useRoute();
 const router = useRouter();
 
+const name = ref('');
 const email = ref('');
 const password = ref('');
+const confirm = ref('');
 const loading = ref(false);
 const error = ref('');
 
-function goNext() {
-  const redirect = (route.query.redirect as string) || '/';
-  router.push(redirect);
-}
+const mismatch = computed(
+  () => confirm.value.length > 0 && password.value !== confirm.value,
+);
 
 async function submit() {
+  if (mismatch.value) return;
   loading.value = true;
   error.value = '';
   try {
-    await auth.login(email.value, password.value);
-    goNext();
+    await auth.register(name.value, email.value, password.value);
+    router.push('/');
   } catch (e) {
     error.value = apiErrorMessage(e);
   } finally {
@@ -38,7 +39,7 @@ async function onGoogle(credential: string) {
   error.value = '';
   try {
     await auth.loginWithGoogle(credential);
-    goNext();
+    router.push('/');
   } catch (e) {
     error.value = apiErrorMessage(e);
   } finally {
@@ -48,8 +49,9 @@ async function onGoogle(credential: string) {
 </script>
 
 <template>
-  <AuthShell title="ContaHora" subtitle="Controle de horas extras">
+  <AuthShell title="Criar uma conta" subtitle="ContaHora">
     <v-form @submit.prevent="submit">
+      <v-text-field v-model="name" label="Nome" prepend-inner-icon="mdi-account-outline" required />
       <v-text-field
         v-model="email"
         label="E-mail"
@@ -62,33 +64,44 @@ async function onGoogle(credential: string) {
         v-model="password"
         label="Senha"
         type="password"
-        autocomplete="current-password"
+        autocomplete="new-password"
         prepend-inner-icon="mdi-lock-outline"
+        hint="mínimo 6 caracteres"
         required
       />
-
-      <div class="text-right mb-2">
-        <RouterLink :to="{ name: 'forgot-password' }" class="text-body-2 text-primary">
-          Esqueci minha senha
-        </RouterLink>
-      </div>
+      <v-text-field
+        v-model="confirm"
+        label="Confirmar senha"
+        type="password"
+        autocomplete="new-password"
+        prepend-inner-icon="mdi-lock-check-outline"
+        :error="mismatch"
+        :error-messages="mismatch ? 'As senhas não conferem' : ''"
+        required
+      />
 
       <v-alert v-if="error" type="error" density="compact" class="mb-3">
         {{ error }}
       </v-alert>
 
-      <v-btn type="submit" color="primary" block size="large" :loading="loading">
-        Entrar
+      <v-btn
+        type="submit"
+        color="primary"
+        block
+        size="large"
+        :loading="loading"
+        :disabled="mismatch"
+      >
+        Criar conta
       </v-btn>
     </v-form>
 
     <GoogleSignInButton class="mt-3" @credential="onGoogle" />
 
     <v-divider class="my-4" />
-
     <div class="text-center text-body-2">
-      Não tem conta?
-      <RouterLink :to="{ name: 'register' }" class="text-primary">Criar uma conta</RouterLink>
+      Já tem conta?
+      <RouterLink :to="{ name: 'login' }" class="text-primary">Entrar</RouterLink>
     </div>
   </AuthShell>
 </template>

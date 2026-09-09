@@ -2,37 +2,128 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { api, apiErrorMessage } from '../lib/api';
 import { minutesToLabel } from '../lib/time';
-import type { SummaryResponse } from '../types';
+import { currentMonthKey, shiftMonth, monthLabel } from '../lib/month';
+import type { SummaryResponse, OvertimeEntry } from '../types';
 
+type Mode = 'year' | 'month';
+const MODE_KEY = 'contahora.dash.mode';
+function savedMode(): Mode {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    if (v === 'year' || v === 'month') return v;
+  } catch {
+    /* ignore */
+  }
+  return 'year';
+}
+
+const mode = ref<Mode>(savedMode());
 const year = ref(new Date().getFullYear());
-const data = ref<SummaryResponse | null>(null);
+const month = ref(currentMonthKey());
 const loading = ref(false);
 const error = ref('');
 
+const yearData = ref<SummaryResponse | null>(null);
+const monthEntries = ref<OvertimeEntry[]>([]);
+
 const MONTHS_SHORT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
-const maxMonth = computed(() =>
-  Math.max(1, ...(data.value?.months.map((m) => m.totalMinutes) ?? [0])),
+interface Bar {
+  key: string;
+  label: string;
+  total: number;
+  pendente: number;
+  paga: number;
+  compensada: number;
+}
+
+const bars = computed<Bar[]>(() => {
+  if (mode.value === 'year') {
+    return (yearData.value?.months ?? []).map((m, i) => ({
+      key: m.month,
+      label: MONTHS_SHORT[i],
+      total: m.totalMinutes,
+      pendente: m.minutesPendente,
+      paga: m.minutesPaga,
+      compensada: m.minutesCompensada,
+    }));
+  }
+  const [y, mo] = month.value.split('-').map(Number);
+  const days = new Date(y, mo, 0).getDate();
+  const buckets: Bar[] = Array.from({ length: days }, (_, i) => ({
+    key: String(i + 1),
+    label: String(i + 1),
+    total: 0,
+    pendente: 0,
+    paga: 0,
+    compensada: 0,
+  }));
+  for (const e of monthEntries.value) {
+    const b = buckets[Number(e.date.slice(8, 10)) - 1];
+    if (!b) continue;
+    b.total += e.minutes;
+    if (e.status === 'PENDENTE') b.pendente += e.minutes;
+    else if (e.status === 'PAGA') b.paga += e.minutes;
+    else b.compensada += e.minutes;
+  }
+  return buckets;
+});
+
+const maxBar = computed(() => Math.max(1, ...bars.value.map((b) => b.total)));
+const pct = (v: number) => `${(v / maxBar.value) * 100}%`;
+const seg = (part: number, total: number) => (total ? `${(part / total) * 100}%` : '0');
+
+const totals = computed(() => {
+  if (mode.value === 'year') {
+    const t = yearData.value?.totals;
+    return {
+      total: t?.totalMinutes ?? 0,
+      pendente: t?.minutesPendente ?? 0,
+      paga: t?.minutesPaga ?? 0,
+      compensada: t?.minutesCompensada ?? 0,
+    };
+  }
+  return bars.value.reduce(
+    (a, b) => ({
+      total: a.total + b.total,
+      pendente: a.pendente + b.pendente,
+      paga: a.paga + b.paga,
+      compensada: a.compensada + b.compensada,
+    }),
+    { total: 0, pendente: 0, paga: 0, compensada: 0 },
+  );
+});
+
+const periodo = computed(() => (mode.value === 'year' ? 'no ano' : 'no mês'));
+const periodoLabel = computed(() =>
+  mode.value === 'year' ? String(year.value) : monthLabel(month.value),
+);
+const chartTitle = computed(() =>
+  mode.value === 'year' ? 'Horas por mês' : 'Horas por dia',
 );
 
-const cards = computed(() => {
-  const t = data.value?.totals;
-  return [
-    { label: 'Total no ano', value: t?.totalMinutes ?? 0, color: 'primary', icon: 'mdi-sigma' },
-    { label: 'Pendente', value: t?.minutesPendente ?? 0, color: 'warning', icon: 'mdi-clock-alert-outline' },
-    { label: 'Paga', value: t?.minutesPaga ?? 0, color: 'success', icon: 'mdi-cash-check' },
-    { label: 'Compensada', value: t?.minutesCompensada ?? 0, color: 'info', icon: 'mdi-swap-horizontal' },
-  ];
-});
+const cards = computed(() => [
+  { label: `Total ${periodo.value}`, value: totals.value.total, color: 'primary', icon: 'mdi-sigma' },
+  { label: 'Pendente', value: totals.value.pendente, color: 'warning', icon: 'mdi-clock-alert-outline' },
+  { label: 'Paga', value: totals.value.paga, color: 'success', icon: 'mdi-cash-check' },
+  { label: 'Compensada', value: totals.value.compensada, color: 'info', icon: 'mdi-swap-horizontal' },
+]);
 
 async function load() {
   loading.value = true;
   error.value = '';
   try {
-    const res = await api.get<SummaryResponse>('/entries/summary', {
-      params: { year: String(year.value) },
-    });
-    data.value = res.data;
+    if (mode.value === 'year') {
+      const res = await api.get<SummaryResponse>('/entries/summary', {
+        params: { year: String(year.value) },
+      });
+      yearData.value = res.data;
+    } else {
+      const res = await api.get<OvertimeEntry[]>('/entries', {
+        params: { month: month.value },
+      });
+      monthEntries.value = res.data;
+    }
   } catch (e) {
     error.value = apiErrorMessage(e);
   } finally {
@@ -41,19 +132,41 @@ async function load() {
 }
 
 onMounted(load);
-watch(year, load);
+watch([mode, year, month], load);
+watch(mode, (m) => {
+  try {
+    localStorage.setItem(MODE_KEY, m);
+  } catch {
+    /* ignore */
+  }
+});
 
-function pct(v: number) {
-  return `${(v / maxMonth.value) * 100}%`;
+function prev() {
+  if (mode.value === 'year') year.value--;
+  else month.value = shiftMonth(month.value, -1);
+}
+function next() {
+  if (mode.value === 'year') year.value++;
+  else month.value = shiftMonth(month.value, 1);
 }
 </script>
 
 <template>
-  <div class="d-flex align-center ga-3 mb-4">
+  <div class="d-flex flex-wrap align-center ga-3 mb-4">
     <h2 class="text-h5 flex-grow-1">Dashboard</h2>
-    <v-btn icon="mdi-chevron-left" variant="text" @click="year--" />
-    <span class="text-h6">{{ year }}</span>
-    <v-btn icon="mdi-chevron-right" variant="text" @click="year++" />
+
+    <v-btn-toggle v-model="mode" mandatory density="compact" variant="outlined" divided>
+      <v-btn value="year" size="small">Ano</v-btn>
+      <v-btn value="month" size="small">Mês</v-btn>
+    </v-btn-toggle>
+
+    <div class="d-flex align-center">
+      <v-btn icon="mdi-chevron-left" variant="text" @click="prev" />
+      <span class="text-subtitle-1 text-capitalize" style="min-width: 130px; text-align: center">
+        {{ periodoLabel }}
+      </span>
+      <v-btn icon="mdi-chevron-right" variant="text" @click="next" />
+    </div>
   </div>
 
   <v-alert v-if="error" type="error" class="mb-4">{{ error }}</v-alert>
@@ -73,18 +186,28 @@ function pct(v: number) {
   </v-row>
 
   <v-card>
-    <v-card-title class="text-subtitle-1">Horas por mês</v-card-title>
+    <v-card-title class="text-subtitle-1">
+      {{ chartTitle }} — <span class="text-capitalize">{{ periodoLabel }}</span>
+    </v-card-title>
     <v-card-text>
-      <div class="chart">
-        <div v-for="(m, i) in data?.months ?? []" :key="m.month" class="chart-col">
-          <div class="chart-bar-wrap">
-            <div class="chart-bar" :style="{ height: pct(m.totalMinutes) }" :title="minutesToLabel(m.totalMinutes)">
-              <div class="seg seg-paga" :style="{ flexBasis: m.totalMinutes ? `${(m.minutesPaga / m.totalMinutes) * 100}%` : '0' }" />
-              <div class="seg seg-comp" :style="{ flexBasis: m.totalMinutes ? `${(m.minutesCompensada / m.totalMinutes) * 100}%` : '0' }" />
-              <div class="seg seg-pend" :style="{ flexBasis: m.totalMinutes ? `${(m.minutesPendente / m.totalMinutes) * 100}%` : '0' }" />
+      <div class="chart-scroll">
+        <div class="chart" :style="{ minWidth: mode === 'month' ? '620px' : '' }">
+          <div v-for="b in bars" :key="b.key" class="chart-col">
+            <div class="chart-bar-wrap">
+              <div
+                class="chart-bar"
+                :style="{ height: pct(b.total) }"
+                :title="`${b.label}: ${minutesToLabel(b.total)}`"
+              >
+                <div class="seg seg-paga" :style="{ flexBasis: seg(b.paga, b.total) }" />
+                <div class="seg seg-comp" :style="{ flexBasis: seg(b.compensada, b.total) }" />
+                <div class="seg seg-pend" :style="{ flexBasis: seg(b.pendente, b.total) }" />
+              </div>
+            </div>
+            <div class="chart-label" :class="{ 'chart-label--sm': mode === 'month' }">
+              {{ b.label }}
             </div>
           </div>
-          <div class="chart-label">{{ MONTHS_SHORT[i] }}</div>
         </div>
       </div>
       <div class="d-flex ga-4 mt-3 text-caption text-medium-emphasis">
@@ -97,10 +220,13 @@ function pct(v: number) {
 </template>
 
 <style scoped>
+.chart-scroll {
+  overflow-x: auto;
+}
 .chart {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   height: 220px;
 }
 .chart-col {
@@ -109,6 +235,7 @@ function pct(v: number) {
   flex-direction: column;
   align-items: center;
   height: 100%;
+  min-width: 14px;
 }
 .chart-bar-wrap {
   flex: 1;
@@ -118,7 +245,7 @@ function pct(v: number) {
   justify-content: center;
 }
 .chart-bar {
-  width: 70%;
+  width: 72%;
   min-height: 2px;
   border-radius: 4px 4px 0 0;
   overflow: hidden;
@@ -142,6 +269,9 @@ function pct(v: number) {
   font-size: 11px;
   margin-top: 4px;
   color: rgba(var(--v-theme-on-surface), 0.6);
+}
+.chart-label--sm {
+  font-size: 10px;
 }
 .dot {
   display: inline-block;

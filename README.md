@@ -10,7 +10,11 @@ Dashboard/grid para anotação de **Horas Extras por mês**. PWA instalável.
 
 ## Rodando localmente
 
-Guia completo em [`docs/rodar-local.md`](docs/rodar-local.md). Resumo:
+**Atalho (Windows):** dá dois cliques em `start.bat` — ele sobe o Postgres,
+instala dependências (1ª vez), roda migrations + seed e abre API e front em
+janelas separadas. `stop.bat` desliga o Postgres.
+
+Guia completo em [`docs/rodar-local.md`](docs/rodar-local.md). Passo a passo manual:
 
 ```bash
 # 1. Postgres (Docker Desktop precisa estar aberto)

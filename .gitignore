@@ -24,3 +24,6 @@ api/prisma/*.db
 # logs
 *.log
 npm-debug.log*
+
+# dumps locais do banco
+backups/
